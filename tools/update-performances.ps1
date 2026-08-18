@@ -36,7 +36,7 @@
 [CmdletBinding()]
 param(
     [string]$ServiceKey,
-    [int]$MonthsBack = 3,
+    [int]$MonthsBack = 2,
     [int]$MonthsAhead = 6,
     [string[]]$Genre = @('AAAA', 'GGGA'),
     [int]$DelayMs = 200,
@@ -334,7 +334,7 @@ try {
             elapsedMinutes  = [math]::Round(($now - $started).TotalMinutes, 1)
             notes           = @(
                 'stdate/eddate는 최대 31일이라 기간을 구간으로 잘라 조회한다.'
-                'KOPIS는 기간 겹침 방식이라 과거 3개월이면 진행 중인 장기 공연도 포함된다.'
+                'KOPIS는 기간 겹침 방식이라 과거 2개월이면 진행 중인 장기 공연도 포함된다.'
                 '공연목록에는 mt10id가 없다. 좌표를 얻으려면 공연상세를 거쳐 공연시설 상세까지 가야 한다.'
                 'poster는 원본이 http다. 혼합 콘텐츠 차단을 피하려고 https로 바꿔 저장한다.'
                 'prfstate는 코드값이 아니라 한글 문자열(공연중/공연예정/공연완료)이다.'

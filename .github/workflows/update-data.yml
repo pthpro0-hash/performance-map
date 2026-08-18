@@ -13,11 +13,11 @@ on:
   workflow_dispatch:
     inputs:
       months_back:
-        description: '과거 몇 개월부터 수집할지 (평소에는 3 그대로 두세요. 줄이면 공연이 그만큼 빠집니다)'
+        description: '과거 몇 개월부터 수집할지 (기본 2)'
         required: false
-        default: '3'
+        default: '2'
       months_ahead:
-        description: '미래 몇 개월까지 수집할지 (평소에는 6 그대로)'
+        description: '미래 몇 개월까지 수집할지 (기본 6)'
         required: false
         default: '6'
 
@@ -70,7 +70,7 @@ jobs:
         env:
           KOPIS_API_KEY: ${{ secrets.KOPIS_API_KEY }}
         run: |
-          $back  = if ('${{ inputs.months_back }}')  { '${{ inputs.months_back }}' }  else { 3 }
+          $back  = if ('${{ inputs.months_back }}')  { '${{ inputs.months_back }}' }  else { 2 }
           $ahead = if ('${{ inputs.months_ahead }}') { '${{ inputs.months_ahead }}' } else { 6 }
           ./update-performances.ps1 -MonthsBack ([int]$back) -MonthsAhead ([int]$ahead) -NoBackup
           if ($LASTEXITCODE -ne 0) { exit 1 }
@@ -95,7 +95,7 @@ jobs:
           # 실제로 적용된 수집 범위를 함께 남긴다.
           # Run workflow 폼에서 값을 바꾸면 건수가 크게 달라지는데,
           # 나중에 결과만 보면 "왜 이번엔 적지?" 하고 원인을 못 찾는다.
-          $back  = if ('${{ inputs.months_back }}')  { '${{ inputs.months_back }}' }  else { '3 (기본값)' }
+          $back  = if ('${{ inputs.months_back }}')  { '${{ inputs.months_back }}' }  else { '2 (기본값)' }
           $ahead = if ('${{ inputs.months_ahead }}') { '${{ inputs.months_ahead }}' } else { '6 (기본값)' }
 
           @"
