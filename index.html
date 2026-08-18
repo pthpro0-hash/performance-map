@@ -7,34 +7,131 @@
 <meta name="description" content="전국의 연극·뮤지컬 공연을 지도에서 한눈에. 공연예술통합전산망(KOPIS) 자료 기반.">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
 <style>
   :root {
-    --ing: #e8590c;      /* 공연중 */
     --soon: #1971c2;     /* 공연예정 */
-    --done: #868e96;     /* 공연완료 */
+    --ing:  #e8590c;     /* 공연중 */
+    --done: #6c757d;     /* 공연완료 — 연회색은 지도 배경에 묻혀서 한 단계 진하게 */
     --bg: #fff;
     --fg: #212529;
+    --dim: #868e96;
     --line: #dee2e6;
+    --accent: #1971c2;
   }
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body { margin: 0; font-family: system-ui, -apple-system, "Malgun Gothic", sans-serif;
-         color: var(--fg); background: var(--bg); }
-  header { padding: 10px 14px; border-bottom: 1px solid var(--line); display: flex;
-           flex-wrap: wrap; gap: 8px; align-items: center; }
-  h1 { font-size: 17px; margin: 0 12px 0 0; }
-  .meta { font-size: 12px; color: #868e96; }
+         color: var(--fg); background: var(--bg); display: flex; flex-direction: column; }
+
+  header { padding: 9px 14px; border-bottom: 1px solid var(--line); display: flex;
+           flex-wrap: wrap; gap: 8px; align-items: baseline; flex: none; }
+  h1 { font-size: 17px; margin: 0 6px 0 0; }
+  .meta { font-size: 12px; color: var(--dim); }
+
   .controls { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px;
-              border-bottom: 1px solid var(--line); }
+              border-bottom: 1px solid var(--line); align-items: center; flex: none; }
+  .sep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
+
   button.chip { border: 1px solid var(--line); background: #fff; border-radius: 999px;
-                padding: 5px 12px; font-size: 13px; cursor: pointer; }
+                padding: 5px 12px; font-size: 13px; cursor: pointer; color: var(--fg); }
+  button.chip:hover { border-color: #adb5bd; }
   button.chip[aria-pressed="true"] { background: var(--fg); color: #fff; border-color: var(--fg); }
-  #search { flex: 1; min-width: 180px; padding: 6px 10px; font-size: 14px;
+  /* 상태 칩은 상태색으로 켜진다. 지도 핀 색과 같아야 대응이 읽힌다. */
+  button.chip.st[aria-pressed="true"] { border-color: transparent; }
+  button.chip.st[data-state="공연예정"][aria-pressed="true"] { background: var(--soon); }
+  button.chip.st[data-state="공연중"][aria-pressed="true"]   { background: var(--ing); }
+  button.chip.st[data-state="공연완료"][aria-pressed="true"] { background: var(--done); }
+  button.chip .n { font-variant-numeric: tabular-nums; opacity: .75; margin-left: 4px; font-size: 11.5px; }
+
+  #search { flex: 1; min-width: 170px; padding: 6px 10px; font-size: 14px;
             border: 1px solid var(--line); border-radius: 6px; }
-  #count { font-size: 13px; color: #495057; padding: 6px 14px; }
-  #map { height: calc(100vh - 200px); }
-  #list { display: none; padding: 0 14px 40px; }
-  footer { padding: 14px; font-size: 12px; color: #868e96; border-top: 1px solid var(--line); }
+  #search:focus { outline: none; border-color: var(--accent); }
+  #sort { padding: 6px 8px; font-size: 13px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+
+  #count { font-size: 13px; color: #495057; padding: 7px 14px; flex: none;
+           border-bottom: 1px solid var(--line); }
+  #count b { font-variant-numeric: tabular-nums; }
+
+  /* 지도와 목록은 남는 높이를 전부 쓴다. 목록만 스크롤한다. */
+  #stage { flex: 1; min-height: 0; position: relative; }
+  #map  { position: absolute; inset: 0; }
+  #list { position: absolute; inset: 0; overflow-y: auto; padding: 0 14px 24px; display: none; }
+  body.listview #map  { display: none; }
+  body.listview #list { display: block; }
+
+  footer { padding: 12px 14px; font-size: 12px; color: var(--dim);
+           border-top: 1px solid var(--line); flex: none; }
+
+  /* ---------- 지도 핀 ----------
+     circleMarker(반지름 7, 테두리 없음)는 OSM 타일 위에서 잘 안 보인다.
+     흰 테두리 + 그림자 + 이모지를 넣은 divIcon으로 바꾼다. */
+  .pin {
+    width: 100%; height: 100%; border-radius: 50%;
+    border: 2.5px solid #fff;
+    /* 흰 테두리만으로는 밝은 타일 위에서 경계가 사라진다.
+       바깥에 얇은 어두운 링을 하나 더 둘러 어떤 배경에서도 윤곽이 남게 한다. */
+    box-shadow: 0 0 0 1px rgba(16,24,40,.35), 0 2px 6px rgba(16,24,40,.45);
+    display: flex; align-items: center; justify-content: center;
+    line-height: 1; cursor: pointer;
+    transition: transform .12s;
+  }
+  .pin:hover { transform: scale(1.18); }
+  .pin.s-공연예정 { background: var(--soon); }
+  .pin.s-공연중   { background: var(--ing); }
+  .pin.s-공연완료 { background: var(--done); }
+
+  .cluster {
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%; color: #fff; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    border: 2px solid rgba(255,255,255,.9);
+    box-shadow: 0 2px 8px rgba(16,24,40,.35);
+    cursor: pointer;
+  }
+  /* 좌표가 겹친 마커를 펼쳤을 때(spiderfy) 나오는 다리. MarkerCluster.Default.css를 쓰지 않으므로 직접 준다. */
+  .leaflet-cluster-spider-leg { stroke: #495057; stroke-opacity: .55; stroke-width: 1.5; }
+
+  .cluster.s1 { background: rgba(25,113,194,.90);  font-size: 12px; }
+  .cluster.s2 { background: rgba(52,131,196,.90);  font-size: 13px; }
+  .cluster.s3 { background: rgba(214,141,42,.92);  font-size: 14px; }
+  .cluster.s4 { background: rgba(206,90,58,.94);   font-size: 15px; }
+
+  /* ---------- 팝업 ---------- */
+  .leaflet-popup-content { margin: 12px 14px; width: 288px !important; }
+  .pop-head { display: flex; gap: 10px; }
+  .pop-name { font-size: 14.5px; font-weight: 700; line-height: 1.35; }
+  .pop-sub { font-size: 12px; color: var(--dim); margin-top: 3px; }
+  .pop-tbl { font-size: 12px; margin-top: 8px; border-collapse: collapse; width: 100%; }
+  .pop-tbl th { color: var(--dim); font-weight: 400; text-align: left; padding: 2px 8px 2px 0;
+                vertical-align: top; white-space: nowrap; }
+  .pop-tbl td { padding: 2px 0; }
+  .poster { width: 74px; height: auto; border-radius: 4px; flex: none; background: #f1f3f5; }
+
+  .badge { display: inline-block; font-size: 10.5px; font-weight: 700; color: #fff;
+           padding: 2px 8px; border-radius: 20px; }
+  .badge.s-공연예정 { background: var(--soon); }
+  .badge.s-공연중   { background: var(--ing); }
+  .badge.s-공연완료 { background: var(--done); }
+
+  /* ---------- 목록 ---------- */
+  #listInfo { font-size: 12px; color: var(--dim); padding: 10px 0 4px; }
+  .card { border-bottom: 1px solid var(--line); padding: 12px 0; }
+  .card-top { display: flex; gap: 8px; align-items: baseline; }
+  .card-name { font-size: 14.5px; font-weight: 700; line-height: 1.35; flex: 1; }
+  .card-body { display: flex; gap: 10px; margin-top: 6px; }
+  .card-meta { font-size: 12px; color: #495057; flex: 1; }
+  .card-meta div { margin: 2px 0; }
+  .card-meta .k { color: var(--dim); display: inline-block; min-width: 52px; }
+  .card-btn { margin-top: 8px; font-size: 12px; padding: 5px 12px; cursor: pointer;
+              border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--fg); }
+  .card-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .card-btn[disabled] { opacity: .45; cursor: default; }
+  #more { display: block; width: 100%; margin: 16px 0 8px; padding: 11px;
+          font-size: 13.5px; font-weight: 600; cursor: pointer;
+          border: 1px solid var(--line); border-radius: 8px; background: #f8f9fa; color: var(--fg); }
+  #more:hover { border-color: var(--accent); color: var(--accent); }
+  .empty { padding: 40px 0; text-align: center; color: var(--dim); font-size: 13.5px; line-height: 1.7; }
+  mark { background: #fff3bf; padding: 0 1px; }
 </style>
 </head>
 <body>
@@ -48,17 +145,30 @@
   <button class="chip" data-period="week">이번주</button>
   <button class="chip" data-period="month" aria-pressed="true">이번달</button>
   <button class="chip" data-period="all">전체</button>
-  <span style="width:12px"></span>
+  <span class="sep"></span>
   <button class="chip" data-genre="연극" aria-pressed="true">연극</button>
   <button class="chip" data-genre="뮤지컬" aria-pressed="true">뮤지컬</button>
-  <span style="width:12px"></span>
+  <span class="sep"></span>
+  <button class="chip st" data-state="공연중" aria-pressed="true">공연중<span class="n" id="c-공연중"></span></button>
+  <button class="chip st" data-state="공연예정" aria-pressed="true">예정<span class="n" id="c-공연예정"></span></button>
+  <button class="chip st" data-state="공연완료" aria-pressed="false">완료<span class="n" id="c-공연완료"></span></button>
+  <span class="sep"></span>
   <button class="chip" id="viewToggle">목록 보기</button>
   <input id="search" type="search" placeholder="공연명 · 출연진 · 공연장 검색 (초성 가능, -단어로 제외)">
+  <select id="sort" title="목록 정렬">
+    <option value="date-asc">시작일 빠른순</option>
+    <option value="date-desc">시작일 늦은순</option>
+    <option value="name">공연명순</option>
+    <option value="venue">공연장순</option>
+  </select>
 </div>
 
 <div id="count"></div>
-<div id="map"></div>
-<div id="list"></div>
+
+<div id="stage">
+  <div id="map"></div>
+  <div id="list"></div>
+</div>
 
 <footer>
   자료: <a href="https://www.kopis.or.kr" target="_blank" rel="noopener">공연예술통합전산망(KOPIS)</a> 오픈API ·
@@ -71,221 +181,394 @@
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script src="performances-data.js"></script>
 <script>
-// Phase 0 실측 1번: prfstate는 코드값('01')이 아니라 한글 문자열('공연중')로 온다.
-// 코드값을 키로 쓰면 라벨과 색이 전부 빈 값이 된다.
-const STATE_COLOR = {
-  '공연예정': 'var(--soon)',
-  '공연중':   'var(--ing)',
-  '공연완료': 'var(--done)'
-};
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
 
-const map = L.map('map').setView([36.5, 127.8], 7);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19,
-  attribution: '&copy; OpenStreetMap'
-}).addTo(map);
+  if (typeof SHOWS === 'undefined') {
+    $('meta').textContent = 'performances-data.js를 찾을 수 없다. build-map.ps1을 실행할 것.';
+    return;
+  }
 
-const cluster = L.markerClusterGroup({ maxClusterRadius: 50, chunkedLoading: true });
-map.addLayer(cluster);
+  // 목록은 나눠 그린다. 3천 장을 한 번에 그리면 DOM이 그만큼 살아 있어 메모리를 크게 먹는다.
+  var LIST_PAGE = 60;
 
-function esc(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
+  // Phase 0 실측 1번: prfstate는 코드값('01')이 아니라 한글 문자열('공연중')로 온다.
+  var STATES = ['공연중', '공연예정', '공연완료'];
+  var GENRE_EMOJI = { '연극': '🎭', '뮤지컬': '🎵' };
 
-// 공연 하나의 팝업/카드 내용. 지도 팝업과 목록에서 같이 쓴다.
-// 공연장명·주소·좌표는 VENUES 사전에 있고, 공연은 색인(vi)만 들고 있다.
-// 공연 3,019건이 공연장 765곳을 가리키므로 이렇게 해야 같은 문자열이 반복 저장되지 않는다.
-function venueOf(p) { return VENUES[p.vi] || {}; }
-
-function cardHtml(p) {
-  const state = p.st || '';
-  const vn = venueOf(p);
-  const rows = [];
-  if (vn.n) rows.push(['공연장', esc(vn.n) + (vn.a ? ' · ' + esc(vn.a) : '')]);
-  if (p.dt) rows.push(['공연시간', esc(p.dt)]);
-  if (p.rt) rows.push(['러닝타임', esc(p.rt)]);
-  if (p.ag) rows.push(['관람연령', esc(p.ag)]);
-  if (p.pr) rows.push(['티켓가격', esc(p.pr)]);
-  if (p.c)  rows.push(['출연', esc(p.c)]);
-  if (p.ent) rows.push(['제작', esc(p.ent)]);
-
-  // 예매처 이름은 BK_NM 사전에 색인으로 들어 있다(용량 절감).
-  const booking = (p.bk || []).map(b =>
-    `<a href="${esc(b.u)}" target="_blank" rel="noopener">${esc(BK_NM[b.i] || '예매')}</a>`).join(' · ');
-
-  // 포스터는 공통 접두사를 뗀 파일명만 저장한다. 예외적으로 전체 URL이 들어 있으면 그대로 쓴다.
-  const poster = p.po ? (p.po.startsWith('http') ? p.po : PO_PREFIX + p.po) : '';
-
-  return `
-    <div style="max-width:320px">
-      <div style="display:flex;gap:10px">
-        ${poster ? `<img src="${esc(poster)}" alt="" style="width:76px;height:auto;border-radius:4px;flex:none"
-                    onerror="this.style.display='none'">` : ''}
-        <div>
-          <div style="font-weight:600;font-size:15px;line-height:1.3">${esc(p.n)}</div>
-          <div style="font-size:12px;margin-top:3px">
-            <span style="color:${STATE_COLOR[p.st] || '#868e96'}">●</span> ${esc(state)}
-            · ${esc(p.g)}
-          </div>
-          <div style="font-size:12px;color:#495057">${esc(p.s)} ~ ${esc(p.e)}</div>
-        </div>
-      </div>
-      <table style="font-size:12px;margin-top:8px;border-collapse:collapse">
-        ${rows.map(([k, v]) =>
-          `<tr><td style="color:#868e96;padding:2px 8px 2px 0;vertical-align:top;white-space:nowrap">${k}</td>
-               <td style="padding:2px 0">${v}</td></tr>`).join('')}
-      </table>
-      ${booking ? `<div style="font-size:12px;margin-top:6px">예매: ${booking}</div>` : ''}
-    </div>`;
-}
-
-function renderMap(rows) {
-  cluster.clearLayers();
-  const markers = [];
-  for (const p of rows) {
-    const vn = venueOf(p);
-    if (vn.la == null || vn.ln == null) continue;
-    const m = L.circleMarker([vn.la, vn.ln], {
-      radius: 7, weight: 2,
-      color: STATE_COLOR[p.st] || '#868e96',
-      fillColor: STATE_COLOR[p.st] || '#868e96',
-      fillOpacity: 0.65
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (m) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m];
     });
-    m.bindPopup(cardHtml(p));
-    markers.push(m);
   }
-  cluster.addLayers(markers);
-}
 
-// 한글 음절을 초성으로 바꾼다. '벚꽃' -> 'ㅂㄲ'
-const CHO = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
-function toCho(s) {
-  let out = '';
-  for (const ch of String(s || '')) {
-    const code = ch.charCodeAt(0) - 0xAC00;
-    if (code >= 0 && code <= 11171) out += CHO[Math.floor(code / 588)];
-    else out += ch;
+  // 공연장명·주소·좌표는 VENUES 사전에 있고, 공연은 색인(vi)만 들고 있다.
+  function venueOf(p) { return VENUES[p.vi] || {}; }
+  function posterOf(p) { return p.po ? (p.po.indexOf('http') === 0 ? p.po : PO_PREFIX + p.po) : ''; }
+
+  // ---- 초성 검색 ----
+  var CHO = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+  var CHO_ONLY = /^[ㄱ-ㅎ]+$/;
+  function toCho(s) {
+    var o = '';
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charCodeAt(i);
+      o += (c >= 0xAC00 && c <= 0xD7A3) ? CHO[((c - 0xAC00) / 588) | 0] : s.charAt(i);
+    }
+    return o;
   }
-  return out;
-}
-const isChoOnly = s => /^[ㄱ-ㅎ]+$/.test(s);
 
-const filters = {
-  period: 'month',
-  genres: new Set(['연극', '뮤지컬']),
-  query: ''
-};
+  // ---- 전처리: 검색문자열과 공연장을 미리 붙여 둔다 ----
+  var data = SHOWS.map(function (p) {
+    var vn = venueOf(p);
+    var hay = [p.n, p.c, p.cr, p.ent, vn.n, vn.a, p.ar].filter(Boolean).join(' ').toLowerCase();
+    return { p: p, vn: vn, st: p.st || '', hay: hay, cho: toCho(hay), marker: null };
+  });
 
-function periodRange(kind) {
-  const now = new Date();
-  const d0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  // toISOString()은 UTC로 바꾸므로 KST(+9)에서는 하루가 앞당겨진다.
-  // new Date(y,m,d)는 로컬 자정이고 데이터의 날짜도 로컬 기준이라, 로컬 값을 그대로 쓴다.
-  const fmt = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  if (kind === 'today') return [fmt(d0), fmt(d0)];
-  if (kind === 'week') {
-    const start = new Date(d0); start.setDate(d0.getDate() - d0.getDay());
-    const end = new Date(start); end.setDate(start.getDate() + 6);
-    return [fmt(start), fmt(end)];
+  // ---- 검색어 해석: 공백=AND, -단어=제외, 초성 지원 ----
+  function parseQuery(q) {
+    var inc = [], exc = [];
+    q.toLowerCase().split(/\s+/).forEach(function (t) {
+      if (!t) return;
+      if (t.charAt(0) === '-' && t.length > 1) exc.push(t.slice(1));
+      else if (t.charAt(0) !== '-') inc.push(t);
+    });
+    return { inc: inc, exc: exc, empty: !inc.length && !exc.length };
   }
-  if (kind === 'month') {
-    return [fmt(new Date(now.getFullYear(), now.getMonth(), 1)),
-            fmt(new Date(now.getFullYear(), now.getMonth() + 1, 0))];
+  function hitToken(d, t) {
+    return CHO_ONLY.test(t) ? d.cho.indexOf(t) !== -1 : d.hay.indexOf(t) !== -1;
   }
-  return null; // all
-}
+  function searchMatch(d, pq) {
+    var i;
+    for (i = 0; i < pq.inc.length; i++) if (!hitToken(d, pq.inc[i])) return false;
+    for (i = 0; i < pq.exc.length; i++) if (hitToken(d, pq.exc[i])) return false;
+    return true;
+  }
 
-// 공연 기간이 조회 범위와 겹치면 통과시킨다.
-function inPeriod(p, range) {
-  if (!range) return true;
-  return p.s <= range[1] && p.e >= range[0];
-}
+  // ---- 기간 ----
+  function fmt(d) {
+    return d.getFullYear() + '-' +
+           String(d.getMonth() + 1).padStart(2, '0') + '-' +
+           String(d.getDate()).padStart(2, '0');
+  }
+  function periodRange(kind) {
+    // toISOString()은 UTC로 바꾸므로 KST(+9)에서는 하루가 앞당겨진다. 로컬 값을 그대로 쓴다.
+    var now = new Date();
+    var d0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    if (kind === 'today') return [fmt(d0), fmt(d0)];
+    if (kind === 'week') {
+      var s = new Date(d0); s.setDate(d0.getDate() - d0.getDay());
+      var e = new Date(s);  e.setDate(s.getDate() + 6);
+      return [fmt(s), fmt(e)];
+    }
+    if (kind === 'month') {
+      return [fmt(new Date(now.getFullYear(), now.getMonth(), 1)),
+              fmt(new Date(now.getFullYear(), now.getMonth() + 1, 0))];
+    }
+    return null;
+  }
+  function inPeriod(d, range) {
+    if (!range) return true;
+    return (d.p.s || '') <= range[1] && (d.p.e || '') >= range[0];
+  }
 
-// 검색 대상 문자열을 한 번만 만들어 둔다.
-for (const p of SHOWS) {
-  const vn = venueOf(p);
-  p._t = [p.n, p.c, p.cr, p.ent, vn.n, vn.a, p.ar].filter(Boolean).join(' ').toLowerCase();
-  p._c = toCho(p._t);
-}
+  // ---- 지도 ----
+  var map = L.map('map').setView([36.5, 127.8], 7);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '&copy; OpenStreetMap'
+  }).addTo(map);
 
-function matchQuery(p, q) {
-  if (!q) return true;
-  const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
-  for (const t of terms) {
-    if (t.startsWith('-') && t.length > 1) {
-      if (p._t.includes(t.slice(1))) return false;
-    } else {
-      const hit = isChoOnly(t) ? p._c.includes(t) : p._t.includes(t);
-      if (!hit) return false;
+  var cluster = L.markerClusterGroup({
+    maxClusterRadius: 55,
+    showCoverageOnHover: false,
+    // 공연 2,876건이 공연장 759곳에 몰려 있어 좌표가 정확히 겹치는 마커가 많다.
+    // 클러스터링을 끄면 겹친 핀이 서로를 가려 한 개만 보인다. 눌러서 펼치게 둔다.
+    spiderfyOnMaxZoom: true,
+    chunkedLoading: true,
+    iconCreateFunction: function (c) {
+      var n = c.getChildCount(), cls, size;
+      if (n < 10)       { cls = 's1'; size = 34; }
+      else if (n < 50)  { cls = 's2'; size = 40; }
+      else if (n < 200) { cls = 's3'; size = 48; }
+      else              { cls = 's4'; size = 56; }
+      return L.divIcon({
+        html: '<div class="cluster ' + cls + '" style="width:' + size + 'px;height:' + size + 'px">' + n + '</div>',
+        className: '', iconSize: [size, size]
+      });
+    }
+  });
+  map.addLayer(cluster);
+
+  // 손가락으로 찍는 화면에서는 핀을 키운다.
+  var TOUCH = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+  var PIN = TOUCH ? 38 : 32;
+
+  function popupHtml(d) {
+    var p = d.p, vn = d.vn, rows = '';
+    function row(k, v) { if (v) rows += '<tr><th>' + k + '</th><td>' + v + '</td></tr>'; }
+    row('공연장', esc(vn.n) + (vn.a ? '<br><span style="color:#868e96">' + esc(vn.a) + '</span>' : ''));
+    row('공연시간', esc(p.dt));
+    row('러닝타임', esc(p.rt));
+    row('관람연령', esc(p.ag));
+    row('티켓가격', esc(p.pr));
+    row('출연', esc(p.c));
+    row('제작', esc(p.ent));
+    if (p.bk && p.bk.length) {
+      row('예매', p.bk.map(function (b) {
+        return '<a href="' + esc(b.u) + '" target="_blank" rel="noopener">' +
+               esc(BK_NM[b.i] || '예매') + '</a>';
+      }).join(' · '));
+    }
+    var po = posterOf(p);
+    return '<div class="pop-head">' +
+             (po ? '<img class="poster" src="' + esc(po) + '" alt="" onerror="this.style.display=\'none\'">' : '') +
+             '<div>' +
+               '<div class="pop-name">' + esc(p.n) + '</div>' +
+               '<div class="pop-sub"><span class="badge s-' + esc(d.st) + '">' + esc(d.st) + '</span> ' + esc(p.g) + '</div>' +
+               '<div class="pop-sub">' + esc(p.s) + ' ~ ' + esc(p.e) + '</div>' +
+             '</div>' +
+           '</div>' +
+           '<table class="pop-tbl">' + rows + '</table>';
+  }
+
+  // 마커는 한 번만 만들고, 필터할 때는 add/remove만 한다.
+  // 매번 새로 만들면 3천 개를 버렸다 다시 만드느라 필터가 눈에 띄게 느려진다.
+  data.forEach(function (d) {
+    if (d.vn.la == null || d.vn.ln == null) return;
+    d.marker = L.marker([d.vn.la, d.vn.ln], {
+      title: d.p.n,
+      riseOnHover: true,
+      icon: L.divIcon({
+        html: '<div class="pin s-' + d.st + '" style="font-size:' + (TOUCH ? 18 : 15) + 'px">' +
+              (GENRE_EMOJI[d.p.g] || '🎭') + '</div>',
+        className: '',
+        iconSize: [PIN, PIN],
+        iconAnchor: [PIN / 2, PIN / 2],
+        popupAnchor: [0, -(PIN / 2 + 1)]
+      })
+    });
+    d.marker.bindPopup(function () { return popupHtml(d); }, { maxWidth: 320, autoPan: true });
+  });
+
+  // ---- 필터 ----
+  var filters = {
+    period: 'month',
+    genres: { '연극': true, '뮤지컬': true },
+    // 완료된 공연이 2,892건 중 1,908건(66%)이라 켜 두면 볼 만한 공연이 그 아래 묻힌다.
+    // 칩 한 번으로 다시 켤 수 있으므로 기본은 끈다.
+    states: { '공연중': true, '공연예정': true, '공연완료': false },
+    query: ''
+  };
+  var current = [];
+
+  function matches(d, range, pq) {
+    return filters.genres[d.p.g] && filters.states[d.st] &&
+           inPeriod(d, range) && searchMatch(d, pq);
+  }
+
+  function apply() {
+    var range = periodRange(filters.period);
+    var pq = parseQuery(filters.query);
+    var keep = [], markers = [], tally = { '공연중': 0, '공연예정': 0, '공연완료': 0 };
+
+    // 상태 칩의 개수는 "상태 조건만 뺀" 결과로 센다. 그래야 켜고 끌 때 숫자가 0으로 죽지 않는다.
+    data.forEach(function (d) {
+      if (filters.genres[d.p.g] && inPeriod(d, range) && searchMatch(d, pq)) {
+        if (tally[d.st] != null) tally[d.st]++;
+      }
+      if (!matches(d, range, pq)) return;
+      keep.push(d);
+      if (d.marker) markers.push(d.marker);
+    });
+    current = keep;
+
+    cluster.clearLayers();
+    cluster.addLayers(markers);
+
+    STATES.forEach(function (s) {
+      var el = $('c-' + s);
+      if (el) el.textContent = tally[s].toLocaleString();
+    });
+    $('count').innerHTML = '표시 중 <b>' + keep.length.toLocaleString() + '</b>건' +
+      ' <span style="color:#868e96">/ 전체 ' + data.length.toLocaleString() + '건</span>' +
+      ' <span style="color:#868e96">· 지도 표시 ' + markers.length.toLocaleString() + '건</span>';
+
+    hlTokens = pq.inc.filter(function (t) { return !CHO_ONLY.test(t); });
+    renderList(true);
+  }
+
+  // ---- 목록 ----
+  function sortList(arr) {
+    var mode = $('sort').value, c = arr.slice();
+    if (mode === 'name')        c.sort(function (a, b) { return a.p.n.localeCompare(b.p.n, 'ko'); });
+    else if (mode === 'venue')  c.sort(function (a, b) { return (a.vn.n || '').localeCompare(b.vn.n || '', 'ko') || (a.p.s || '').localeCompare(b.p.s || ''); });
+    else if (mode === 'date-desc') c.sort(function (a, b) { return (b.p.s || '').localeCompare(a.p.s || ''); });
+    else                        c.sort(function (a, b) { return (a.p.s || '').localeCompare(b.p.s || ''); });
+    return c;
+  }
+
+  // 검색어가 어디에 걸렸는지 보이도록 목록에서만 강조한다.
+  var hlTokens = [];
+  function hl(text) {
+    var s = esc(text);
+    hlTokens.forEach(function (t) {
+      var re = new RegExp('(' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+      s = s.replace(re, '<mark>$1</mark>');
+    });
+    return s;
+  }
+
+  function cardHtml(d, idx) {
+    var p = d.p, vn = d.vn, m = '';
+    m += '<div><span class="k">기간</span>' + esc(p.s) + ' ~ ' + esc(p.e) + '</div>';
+    if (vn.n) m += '<div><span class="k">공연장</span>' + hl(vn.n) + (vn.a ? ' · ' + hl(vn.a) : '') + '</div>';
+    if (p.dt) m += '<div><span class="k">공연시간</span>' + esc(p.dt) + '</div>';
+    if (p.pr) m += '<div><span class="k">티켓가격</span>' + esc(p.pr) + '</div>';
+    if (p.c)  m += '<div><span class="k">출연</span>' + hl(p.c) + '</div>';
+    if (p.bk && p.bk.length) {
+      m += '<div><span class="k">예매</span>' + p.bk.map(function (b) {
+        return '<a href="' + esc(b.u) + '" target="_blank" rel="noopener">' + esc(BK_NM[b.i] || '예매') + '</a>';
+      }).join(' · ') + '</div>';
+    }
+    var po = posterOf(p);
+    return '<div class="card">' +
+             '<div class="card-top">' +
+               '<div class="card-name">' + hl(p.n) + '</div>' +
+               '<span class="badge s-' + esc(d.st) + '">' + esc(d.st) + '</span>' +
+             '</div>' +
+             '<div class="card-body">' +
+               (po ? '<img class="poster" src="' + esc(po) + '" alt="" loading="lazy" onerror="this.style.display=\'none\'">' : '') +
+               '<div class="card-meta">' + m +
+                 (d.marker
+                   ? '<button class="card-btn" data-idx="' + idx + '">지도에서 보기</button>'
+                   : '<button class="card-btn" disabled title="공연장 좌표가 없어 지도에 표시할 수 없습니다">지도 미표시 (좌표 없음)</button>') +
+               '</div>' +
+             '</div>' +
+           '</div>';
+  }
+
+  var sorted = [], listShown = 0;
+  function renderList(reset) {
+    var el = $('list');
+    if (reset) { sorted = sortList(current); listShown = 0; el.innerHTML = ''; }
+
+    // 목록 화면이 아닐 때는 그리지 않는다. 지도만 보는 동안 DOM을 만들어 둘 이유가 없다.
+    if (!document.body.classList.contains('listview')) return;
+
+    if (!sorted.length) {
+      el.innerHTML = '<div class="empty">조건에 맞는 공연이 없습니다.<br>필터를 넓혀 보세요.</div>';
+      return;
+    }
+
+    var end = Math.min(listShown + LIST_PAGE, sorted.length);
+    var html = '';
+    if (listShown === 0) {
+      html += '<div id="listInfo">' + sorted.length.toLocaleString() + '건 · ' +
+              $('sort').selectedOptions[0].textContent + '</div>';
+    }
+    for (var i = listShown; i < end; i++) html += cardHtml(sorted[i], i);
+    listShown = end;
+
+    var more = $('more');
+    if (more) more.remove();
+    el.insertAdjacentHTML('beforeend', html);
+    if (listShown < sorted.length) {
+      el.insertAdjacentHTML('beforeend',
+        '<button id="more">' + (sorted.length - listShown).toLocaleString() + '건 더 보기 ' +
+        '<span style="color:#868e96;font-weight:400">(' + LIST_PAGE + '건씩)</span></button>');
     }
   }
-  return true;
-}
 
-function renderList(rows) {
-  const el = document.getElementById('list');
-  // 초기에는 인라인 스타일이 비어 있고 CSS로만 숨겨져 있다.
-  // getComputedStyle로 봐야 첫 렌더에서 헛일하지 않는다.
-  if (getComputedStyle(el).display === 'none') { el._stale = rows; return; }
-  const sorted = [...rows].sort((a, b) => (a.s || '').localeCompare(b.s || ''));
-  el.innerHTML = sorted.slice(0, 500).map(p => `
-    <div style="border-bottom:1px solid var(--line);padding:12px 0">
-      ${cardHtml(p)}
-      ${venueOf(p).la == null ? '<div style="font-size:11px;color:#adb5bd;margin-top:4px">지도 미표시 (공연장 좌표 없음)</div>' : ''}
-    </div>`).join('')
-    + (sorted.length > 500 ? `<p style="color:#868e96;font-size:13px">상위 500건만 표시합니다. 검색으로 좁혀 보세요.</p>` : '');
-}
+  // 목록 → 지도 이동. 클러스터에 묶여 있으면 풀어서 팝업을 연다.
+  //
+  // 한 공연장에 여러 공연이 있으면 마커 좌표가 완전히 같다. 그래서
+  //   - zoomToShowLayer는 아무리 확대해도 마커가 안 떨어져 최대 배율까지 갔다가 멈추고,
+  //   - 클러스터를 직접 펼치는(spiderfy) 방법은 재계산 타이밍을 타서 간헐적으로 실패한다.
+  // 어느 쪽이든 "누른 공연"이 아니라 "같은 자리의 아무 공연"을 보게 될 수도 있다.
+  // 마커에 매달린 팝업을 쓰지 않고 그 좌표에 팝업을 직접 띄우면 타이밍과 무관하게
+  // 항상 누른 공연이 뜬다.
+  function focusMarker(d) {
+    showMap();
+    var ll = d.marker.getLatLng();
+    map.setView(ll, 17, { animate: false });
+    L.popup({ maxWidth: 320, autoPan: true })
+      .setLatLng(ll)
+      .setContent(popupHtml(d))
+      .openOn(map);
+  }
 
-function apply() {
-  const range = periodRange(filters.period);
-  const rows = SHOWS.filter(p =>
-    filters.genres.has(p.g) && inPeriod(p, range) && matchQuery(p, filters.query));
-  renderMap(rows);
-  renderList(rows);
-  const onMap = rows.filter(p => venueOf(p).la != null).length;
-  document.getElementById('count').textContent =
-    `${rows.length.toLocaleString()}건 (지도 표시 ${onMap.toLocaleString()}건)`;
-  return rows;
-}
+  $('list').addEventListener('click', function (ev) {
+    if (ev.target.closest('#more')) { renderList(false); return; }
+    var btn = ev.target.closest('.card-btn');
+    if (!btn || btn.disabled) return;
+    var d = sorted[+btn.dataset.idx];
+    if (!d || !d.marker) return;
+    focusMarker(d);
+  });
 
-document.querySelectorAll('[data-period]').forEach(b => b.addEventListener('click', () => {
-  filters.period = b.dataset.period;
-  document.querySelectorAll('[data-period]').forEach(x =>
-    x.setAttribute('aria-pressed', String(x === b)));
+  // ---- 뷰 전환 ----
+  function showMap() {
+    document.body.classList.remove('listview');
+    $('viewToggle').textContent = '목록 보기';
+    map.invalidateSize();   // 숨겼다 켜면 타일 크기가 어긋난다
+  }
+  function showList() {
+    document.body.classList.add('listview');
+    $('viewToggle').textContent = '지도 보기';
+    renderList(true);
+  }
+  $('viewToggle').addEventListener('click', function () {
+    if (document.body.classList.contains('listview')) showMap(); else showList();
+  });
+
+  // ---- 컨트롤 ----
+  document.querySelectorAll('[data-period]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      filters.period = b.dataset.period;
+      document.querySelectorAll('[data-period]').forEach(function (x) {
+        x.setAttribute('aria-pressed', String(x === b));
+      });
+      apply();
+    });
+  });
+  document.querySelectorAll('[data-genre]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var g = b.dataset.genre;
+      filters.genres[g] = !filters.genres[g];
+      b.setAttribute('aria-pressed', String(filters.genres[g]));
+      apply();
+    });
+  });
+  document.querySelectorAll('[data-state]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var s = b.dataset.state;
+      filters.states[s] = !filters.states[s];
+      b.setAttribute('aria-pressed', String(filters.states[s]));
+      apply();
+    });
+  });
+  var timer = null;
+  $('search').addEventListener('input', function (e) {
+    clearTimeout(timer);
+    timer = setTimeout(function () { filters.query = e.target.value.trim(); apply(); }, 200);
+  });
+  $('sort').addEventListener('change', function () { renderList(true); });
+
+  // ---- 초기화 ----
+  $('meta').textContent = '갱신 ' + SHOW_META.savedAt + ' · 전체 ' + SHOW_META.totalRecords.toLocaleString() + '건';
+  $('scope').textContent =
+    '수집 범위: ' + SHOW_META.rangeFrom + ' ~ ' + SHOW_META.rangeTo + ' · 연극 · 뮤지컬 · 전체 ' +
+    SHOW_META.totalRecords.toLocaleString() + '건 중 좌표가 있는 ' +
+    SHOW_META.mappedCount.toLocaleString() + '건이 지도에 표시됩니다.';
+
   apply();
-}));
 
-document.querySelectorAll('[data-genre]').forEach(b => b.addEventListener('click', () => {
-  const g = b.dataset.genre;
-  if (filters.genres.has(g)) filters.genres.delete(g); else filters.genres.add(g);
-  b.setAttribute('aria-pressed', String(filters.genres.has(g)));
-  apply();
-}));
-
-let timer = null;
-document.getElementById('search').addEventListener('input', e => {
-  clearTimeout(timer);
-  timer = setTimeout(() => { filters.query = e.target.value.trim(); apply(); }, 200);
-});
-
-document.getElementById('viewToggle').addEventListener('click', () => {
-  const listEl = document.getElementById('list');
-  const mapEl = document.getElementById('map');
-  const showList = listEl.style.display === 'none' || listEl.style.display === '';
-  listEl.style.display = showList ? 'block' : 'none';
-  mapEl.style.display = showList ? 'none' : 'block';
-  document.getElementById('viewToggle').textContent = showList ? '지도 보기' : '목록 보기';
-  if (showList) { renderList(listEl._stale || apply()); }
-  else { map.invalidateSize(); }
-});
-
-document.getElementById('meta').textContent =
-  `갱신 ${SHOW_META.savedAt} · 전체 ${SHOW_META.totalRecords.toLocaleString()}건`;
-document.getElementById('scope').textContent =
-  `수집 범위: ${SHOW_META.rangeFrom} ~ ${SHOW_META.rangeTo} · 연극 · 뮤지컬 · 전체 ${SHOW_META.totalRecords.toLocaleString()}건 중 좌표가 있는 ${SHOW_META.mappedCount.toLocaleString()}건이 지도에 표시됩니다.`;
-
-apply();
+  // 콘솔 점검용
+  window._dbg = { data: data, periodRange: periodRange, apply: apply, filters: filters,
+                  get sorted() { return sorted; }, get listShown() { return listShown; },
+                  get current() { return current; }, cluster: cluster };
+})();
 </script>
 </body>
 </html>
