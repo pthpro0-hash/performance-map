@@ -78,14 +78,19 @@ jobs:
       - name: 지도 데이터 생성
         shell: pwsh
         run: |
-          ./tools/build-map.ps1 -InFile tools/performances.json -OutFile performances-data.js
+          # 절대 경로로 넘긴다. Write-Utf8NoBom이 [System.IO.File]::WriteAllText를 쓰는데,
+          # .NET은 상대 경로를 PowerShell의 현재 위치가 아니라 프로세스 작업 디렉터리로 푼다.
+          # 둘이 어긋나면 파일이 엉뚱한 곳에 생긴다.
+          ./tools/build-map.ps1 `
+            -InFile  "${{ github.workspace }}/tools/performances.json" `
+            -OutFile "${{ github.workspace }}/performances-data.js"
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: 결과 요약
         shell: pwsh
         run: |
-          $m = (Get-Content tools/performances.json -Raw -Encoding UTF8 | ConvertFrom-Json)._meta
-          $kb = [math]::Round((Get-Item performances-data.js).Length / 1KB)
+          $m = (Get-Content "${{ github.workspace }}/tools/performances.json" -Raw -Encoding UTF8 | ConvertFrom-Json)._meta
+          $kb = [math]::Round((Get-Item "${{ github.workspace }}/performances-data.js").Length / 1KB)
           # Actions 실행 요약 화면에 표로 남긴다. 로그를 뒤지지 않아도 결과가 보인다.
           @"
           ## 공연 데이터 갱신 결과
@@ -111,13 +116,23 @@ jobs:
           git config user.name  'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add performances-data.js
+
           # 데이터가 그대로면 커밋하지 않는다. 빈 커밋이 쌓이지 않게 한다.
-          if (git diff --cached --quiet) {
+          #
+          # 주의: PowerShell에서 `if (git diff --quiet)` 는 종료 코드가 아니라 표준출력을 본다.
+          # --quiet은 아무것도 출력하지 않으므로 조건이 항상 거짓이 되어, 변경이 없을 때도
+          # git commit을 시도하다 "nothing to commit"으로 스텝이 실패한다. 종료 코드를 봐야 한다.
+          git diff --cached --quiet
+          $noChange = ($LASTEXITCODE -eq 0)
+
+          if ($noChange) {
             Write-Host "변경 없음. 커밋을 건너뜁니다."
           } else {
-            $savedAt = (Get-Content tools/performances.json -Raw -Encoding UTF8 | ConvertFrom-Json)._meta.savedAt
+            $savedAt = (Get-Content "${{ github.workspace }}/tools/performances.json" -Raw -Encoding UTF8 | ConvertFrom-Json)._meta.savedAt
             git commit -m "데이터 갱신 ($savedAt)"
+            if ($LASTEXITCODE -ne 0) { exit 1 }
             git push
+            if ($LASTEXITCODE -ne 0) { exit 1 }
             Write-Host "커밋·푸시 완료"
           }
 
