@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://pthpro0-hash.github.io/performance-map/sitemap.xml
