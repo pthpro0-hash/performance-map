@@ -30,6 +30,8 @@
 
   .controls { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px;
               border-bottom: 1px solid var(--line); align-items: center; flex: none; }
+  .chips, .tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .tools { flex: 1; min-width: 260px; }
   .sep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
 
   button.chip { border: 1px solid var(--line); background: #fff; border-radius: 999px;
@@ -132,6 +134,38 @@
   #more:hover { border-color: var(--accent); color: var(--accent); }
   .empty { padding: 40px 0; text-align: center; color: var(--dim); font-size: 13.5px; line-height: 1.7; }
   mark { background: #fff3bf; padding: 0 1px; }
+
+  /* ---------- 좁은 화면 ----------
+     칩이 여러 줄로 감기면 머리말만 380px를 먹어 지도가 화면의 절반 아래로 내려간다.
+     칩은 가로로 미는 한 줄로 두고, 꼬리말은 접어서 지도에 높이를 돌려준다. */
+  @media (max-width: 640px) {
+    header { padding: 7px 12px; }
+    h1 { font-size: 15.5px; }
+    .meta { font-size: 11px; }
+
+    .controls { padding: 7px 0 7px 12px; gap: 6px; }
+    .chips {
+      flex-wrap: nowrap; overflow-x: auto; width: 100%;
+      padding-right: 12px; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+    }
+    .chips::-webkit-scrollbar { display: none; }
+    .chips > * { flex: none; }
+    .tools { width: 100%; padding-right: 12px; min-width: 0; }
+    #search { min-width: 0; }
+    #count { padding: 6px 12px; font-size: 12.5px; }
+
+    /* 꼬리말은 기본으로 접어 둔다. 출처 표기는 접힌 상태에서도 보인다. */
+    footer { padding: 9px 12px; font-size: 11px; line-height: 1.5; }
+    footer details > summary { cursor: pointer; color: var(--accent); list-style: none; }
+    footer details > summary::-webkit-details-marker { display: none; }
+    footer details > summary::after { content: ' ▾'; }
+    footer details[open] > summary::after { content: ' ▴'; }
+  }
+  @media (min-width: 641px) {
+    /* 넓은 화면에서는 접을 이유가 없다. 항상 펼쳐 둔다. */
+    footer details > summary { display: none; }
+    footer details > div { display: block !important; }
+  }
 </style>
 </head>
 <body>
@@ -141,26 +175,29 @@
 </header>
 
 <div class="controls">
-  <button class="chip" data-period="today">오늘</button>
-  <button class="chip" data-period="week">이번주</button>
-  <button class="chip" data-period="month" aria-pressed="true">이번달</button>
-  <button class="chip" data-period="all">전체</button>
-  <span class="sep"></span>
-  <button class="chip" data-genre="연극" aria-pressed="true">연극</button>
-  <button class="chip" data-genre="뮤지컬" aria-pressed="true">뮤지컬</button>
-  <span class="sep"></span>
-  <button class="chip st" data-state="공연중" aria-pressed="true">공연중<span class="n" id="c-공연중"></span></button>
-  <button class="chip st" data-state="공연예정" aria-pressed="true">예정<span class="n" id="c-공연예정"></span></button>
-  <button class="chip st" data-state="공연완료" aria-pressed="false">완료<span class="n" id="c-공연완료"></span></button>
-  <span class="sep"></span>
-  <button class="chip" id="viewToggle">목록 보기</button>
-  <input id="search" type="search" placeholder="공연명 · 출연진 · 공연장 검색 (초성 가능, -단어로 제외)">
-  <select id="sort" title="목록 정렬">
-    <option value="date-asc">시작일 빠른순</option>
-    <option value="date-desc">시작일 늦은순</option>
-    <option value="name">공연명순</option>
-    <option value="venue">공연장순</option>
-  </select>
+  <div class="chips">
+    <button class="chip" data-period="today">오늘</button>
+    <button class="chip" data-period="week">이번주</button>
+    <button class="chip" data-period="month" aria-pressed="true">이번달</button>
+    <button class="chip" data-period="all">전체</button>
+    <span class="sep"></span>
+    <button class="chip" data-genre="연극" aria-pressed="true">연극</button>
+    <button class="chip" data-genre="뮤지컬" aria-pressed="true">뮤지컬</button>
+    <span class="sep"></span>
+    <button class="chip st" data-state="공연중" aria-pressed="true">공연중<span class="n" id="c-공연중"></span></button>
+    <button class="chip st" data-state="공연예정" aria-pressed="true">예정<span class="n" id="c-공연예정"></span></button>
+    <button class="chip st" data-state="공연완료" aria-pressed="false">완료<span class="n" id="c-공연완료"></span></button>
+  </div>
+  <div class="tools">
+    <button class="chip" id="viewToggle">목록 보기</button>
+    <input id="search" type="search" placeholder="공연명 · 출연진 · 공연장 검색 (초성 가능, -단어로 제외)">
+    <select id="sort" title="목록 정렬">
+      <option value="date-asc">시작일 빠른순</option>
+      <option value="date-desc">시작일 늦은순</option>
+      <option value="name">공연명순</option>
+      <option value="venue">공연장순</option>
+    </select>
+  </div>
 </div>
 
 <div id="count"></div>
@@ -172,9 +209,14 @@
 
 <footer>
   자료: <a href="https://www.kopis.or.kr" target="_blank" rel="noopener">공연예술통합전산망(KOPIS)</a> 오픈API ·
-  지도: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a><br>
-  <span id="scope"></span><br>
-  KOPIS는 예매가 등록된 공연을 기준으로 하므로, 예매처를 쓰지 않는 일부 소극장 공연은 포함되지 않을 수 있습니다.
+  지도: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>
+  <details open>
+    <summary>수집 범위 안내</summary>
+    <div>
+      <span id="scope"></span><br>
+      KOPIS는 예매가 등록된 공연을 기준으로 하므로, 예매처를 쓰지 않는 일부 소극장 공연은 포함되지 않을 수 있습니다.
+    </div>
+  </details>
 </footer>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -561,6 +603,12 @@
     '수집 범위: ' + SHOW_META.rangeFrom + ' ~ ' + SHOW_META.rangeTo + ' · 연극 · 뮤지컬 · 전체 ' +
     SHOW_META.totalRecords.toLocaleString() + '건 중 좌표가 있는 ' +
     SHOW_META.mappedCount.toLocaleString() + '건이 지도에 표시됩니다.';
+
+  // 좁은 화면에서는 꼬리말을 접어 둔다. 지도에 높이를 돌려주기 위한 것이다.
+  if (window.matchMedia && window.matchMedia('(max-width: 640px)').matches) {
+    var det = document.querySelector('footer details');
+    if (det) det.open = false;
+  }
 
   apply();
 
