@@ -1,0 +1,6 @@
+# GitHub Actions 러너가 수집 중에 만드는 파일들. 저장소에는 빌드 결과만 둔다.
+tools/performances.json
+tools/venues.json
+tools/cache/
+tools/logs/
+tools/backup/

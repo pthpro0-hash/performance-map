@@ -1,0 +1,132 @@
+name: 공연 데이터 주간 갱신
+
+# 이 워크플로는 GitHub 서버에서 돈다. 내 PC가 꺼져 있어도 갱신된다.
+#
+# 인증키는 저장소에 없다. Settings > Secrets and variables > Actions 에
+# KOPIS_API_KEY 를 등록해야 동작한다.
+
+on:
+  schedule:
+    # cron은 UTC 기준이다. 월요일 04:00 KST = 일요일 19:00 UTC.
+    - cron: '0 19 * * 0'
+  # Actions 탭에서 버튼으로 즉시 돌릴 수도 있다.
+  workflow_dispatch:
+    inputs:
+      months_back:
+        description: '과거 몇 개월부터 수집할지'
+        required: false
+        default: '3'
+      months_ahead:
+        description: '미래 몇 개월까지 수집할지'
+        required: false
+        default: '6'
+
+# 커밋을 되돌려 push 하려면 쓰기 권한이 필요하다.
+permissions:
+  contents: write
+
+# 이전 실행이 아직 돌고 있으면 새로 시작하지 않는다(중복 커밋 방지).
+concurrency:
+  group: update-data
+  cancel-in-progress: false
+
+jobs:
+  update:
+    # 스크립트가 Windows 경로(\)를 쓰므로 windows 러너에서 그대로 돌린다.
+    # 공개 저장소라 Actions 사용 시간은 무료다.
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: 저장소 받기
+        uses: actions/checkout@v4
+
+      - name: 인증키 확인
+        shell: pwsh
+        env:
+          KOPIS_API_KEY: ${{ secrets.KOPIS_API_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:KOPIS_API_KEY)) {
+            Write-Host "::error::KOPIS_API_KEY 시크릿이 없습니다."
+            Write-Host "저장소 Settings > Secrets and variables > Actions > New repository secret 에서"
+            Write-Host "이름을 KOPIS_API_KEY 로 등록하세요."
+            exit 1
+          }
+          Write-Host "인증키 확인 (길이 $($env:KOPIS_API_KEY.Length))"
+
+      # 공연장 좌표는 잘 변하지 않는다. 캐시해 두면 매주 760여 건의 호출을 아낀다.
+      # 공연 상세는 일부러 캐시하지 않는다. 매주 새로 받아야 가격·예매처가 최신으로 유지된다.
+      - name: 공연장 캐시 복원
+        uses: actions/cache@v4
+        with:
+          path: tools/venues.json
+          key: venues-${{ github.run_id }}
+          restore-keys: |
+            venues-
+
+      - name: 데이터 수집
+        shell: pwsh
+        working-directory: tools
+        env:
+          KOPIS_API_KEY: ${{ secrets.KOPIS_API_KEY }}
+        run: |
+          $back  = if ('${{ inputs.months_back }}')  { '${{ inputs.months_back }}' }  else { 3 }
+          $ahead = if ('${{ inputs.months_ahead }}') { '${{ inputs.months_ahead }}' } else { 6 }
+          ./update-performances.ps1 -MonthsBack ([int]$back) -MonthsAhead ([int]$ahead) -NoBackup
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: 지도 데이터 생성
+        shell: pwsh
+        run: |
+          ./tools/build-map.ps1 -InFile tools/performances.json -OutFile performances-data.js
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: 결과 요약
+        shell: pwsh
+        run: |
+          $m = (Get-Content tools/performances.json -Raw -Encoding UTF8 | ConvertFrom-Json)._meta
+          $kb = [math]::Round((Get-Item performances-data.js).Length / 1KB)
+          # Actions 실행 요약 화면에 표로 남긴다. 로그를 뒤지지 않아도 결과가 보인다.
+          @"
+          ## 공연 데이터 갱신 결과
+
+          | 항목 | 값 |
+          |---|---|
+          | 수집 건수 | $($m.recordCount) 건 |
+          | 좌표 없음 | $($m.noCoordCount) 건 |
+          | 상세 실패 | $($m.detailFailCount) 건 |
+          | 공연장 | $($m.venueCount) 곳 |
+          | 수집 범위 | $($m.rangeFrom) ~ $($m.rangeTo) |
+          | 지도 파일 | $kb KB |
+          | 소요 | $($m.elapsedMinutes) 분 |
+          "@ | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+          if ($m.recordCount -lt 500) {
+            Write-Host "::warning::수집 건수가 $($m.recordCount)건으로 평소보다 적습니다. KOPIS 응답을 확인하세요."
+          }
+
+      - name: 변경사항 커밋
+        shell: pwsh
+        run: |
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add performances-data.js
+          # 데이터가 그대로면 커밋하지 않는다. 빈 커밋이 쌓이지 않게 한다.
+          if (git diff --cached --quiet) {
+            Write-Host "변경 없음. 커밋을 건너뜁니다."
+          } else {
+            $savedAt = (Get-Content tools/performances.json -Raw -Encoding UTF8 | ConvertFrom-Json)._meta.savedAt
+            git commit -m "데이터 갱신 ($savedAt)"
+            git push
+            Write-Host "커밋·푸시 완료"
+          }
+
+      - name: 실패 내역 보관
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs
+          path: |
+            tools/logs/detail-failures.json
+          if-no-files-found: ignore
+          retention-days: 30
