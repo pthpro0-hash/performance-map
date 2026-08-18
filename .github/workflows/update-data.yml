@@ -13,11 +13,11 @@ on:
   workflow_dispatch:
     inputs:
       months_back:
-        description: '과거 몇 개월부터 수집할지'
+        description: '과거 몇 개월부터 수집할지 (평소에는 3 그대로 두세요. 줄이면 공연이 그만큼 빠집니다)'
         required: false
         default: '3'
       months_ahead:
-        description: '미래 몇 개월까지 수집할지'
+        description: '미래 몇 개월까지 수집할지 (평소에는 6 그대로)'
         required: false
         default: '6'
 
@@ -92,22 +92,32 @@ jobs:
           $m = (Get-Content "${{ github.workspace }}/tools/performances.json" -Raw -Encoding UTF8 | ConvertFrom-Json)._meta
           $kb = [math]::Round((Get-Item "${{ github.workspace }}/performances-data.js").Length / 1KB)
           # Actions 실행 요약 화면에 표로 남긴다. 로그를 뒤지지 않아도 결과가 보인다.
+          # 실제로 적용된 수집 범위를 함께 남긴다.
+          # Run workflow 폼에서 값을 바꾸면 건수가 크게 달라지는데,
+          # 나중에 결과만 보면 "왜 이번엔 적지?" 하고 원인을 못 찾는다.
+          $back  = if ('${{ inputs.months_back }}')  { '${{ inputs.months_back }}' }  else { '3 (기본값)' }
+          $ahead = if ('${{ inputs.months_ahead }}') { '${{ inputs.months_ahead }}' } else { '6 (기본값)' }
+
           @"
           ## 공연 데이터 갱신 결과
 
           | 항목 | 값 |
           |---|---|
-          | 수집 건수 | $($m.recordCount) 건 |
+          | 수집 건수 | **$($m.recordCount)** 건 |
           | 좌표 없음 | $($m.noCoordCount) 건 |
           | 상세 실패 | $($m.detailFailCount) 건 |
           | 공연장 | $($m.venueCount) 곳 |
           | 수집 범위 | $($m.rangeFrom) ~ $($m.rangeTo) |
+          | 과거 / 미래 개월 | $back / $ahead |
           | 지도 파일 | $kb KB |
           | 소요 | $($m.elapsedMinutes) 분 |
           "@ | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 
           if ($m.recordCount -lt 500) {
             Write-Host "::warning::수집 건수가 $($m.recordCount)건으로 평소보다 적습니다. KOPIS 응답을 확인하세요."
+          }
+          if ($m.detailFailCount -gt 0) {
+            Write-Host "::warning::공연상세 조회 실패 $($m.detailFailCount)건. 아티팩트 logs 를 확인하세요. (다음 실행에서 자동 재시도됩니다)"
           }
 
       - name: 변경사항 커밋

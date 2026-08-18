@@ -149,6 +149,10 @@ try {
         noCoordCount = $noCoord + $outOfRange
         rangeFrom    = $doc._meta.rangeFrom
         rangeTo      = $doc._meta.rangeTo
+        # 서버(Actions)에서 돌면 로그를 열어 봐야 알 수 있는 값들이다.
+        # 배포된 파일에 넣어 두면 공개 사이트에서 바로 확인할 수 있다.
+        detailFail   = $doc._meta.detailFailCount
+        venueCount   = $doc._meta.venueCount
     }
 
     $sb = [System.Text.StringBuilder]::new()
