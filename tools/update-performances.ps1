@@ -84,9 +84,15 @@ function Get-PerformanceList {
                 }
                 $batch = @($xml.dbs.db)
                 foreach ($item in $batch) {
-                    if (-not $byId.ContainsKey($item.mt20id)) {
-                        $byId[$item.mt20id] = [ordered]@{
-                            mt20id    = [string]$item.mt20id
+                    $id = [string]$item.mt20id
+                    if ([string]::IsNullOrWhiteSpace($id)) {
+                        Write-Log "  경고: mt20id가 없는 공연목록 항목을 건너뜁니다. ($($r.Start)~$($r.End) / $($GENRE_NAME[$g]) / $page 페이지)"
+                        continue
+                    }
+
+                    if (-not $byId.ContainsKey($id)) {
+                        $byId[$id] = [ordered]@{
+                            mt20id    = $id
                             prfnm     = [string]$item.prfnm
                             prfpdfrom = [string]$item.prfpdfrom
                             prfpdto   = [string]$item.prfpdto
